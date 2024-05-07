@@ -1,5 +1,4 @@
 // hover 悬停
-
 /*
 **注意改名
 
@@ -31,6 +30,9 @@
 #pragma comment(lib, "Winmm.LIB")
 #pragma comment(lib, "MSIMG32.LIB")
 
+bool is_game_started = false;
+
+bool running = true;
 //这个没必要深究，只是封装了一个检测角色透明部分的加载图片函数
 inline void putimage_alpha(int x, int y, IMAGE* img)
 {
@@ -44,15 +46,60 @@ inline void putimage_alpha(int x, int y, IMAGE* img)
 
 //动画类，用来封装动画相关逻辑和数据
 
-/*class Button
+class Button
 {
 public:
-	Button()
+	Button(RECT rect, LPCTSTR path_img_idle, LPCTSTR path_img_hovered, LPCTSTR path_img_pushed)
 	{
-		region = 
+		region = rect;
+
+		loadimage(&img_idle, path_img_idle);
+		loadimage(&img_hovered, path_img_hovered);
+		loadimage(&img_pushed, path_img_pushed);
 	}
 	~Button() = default;
 
+	void ProcessEvent(const ExMessage& msg)
+	{
+		switch (msg.message)
+		{
+		case WM_MOUSEMOVE:
+			if (status == Status::Idle && CheckCursorHit(msg.x, msg.y))
+				status = Status::Hovered;
+			else if (status == Status::Hovered && !CheckCursorHit(msg.x, msg.y))
+				status = Status::Idle;
+			break;
+
+		case WM_LBUTTONDOWN:
+			if (!CheckCursorHit(msg.x, msg.y))
+				status = Status::Pushed;
+			break;
+		case WM_LBUTTONUP:
+			if (status == Status::Pushed)
+				OnClick();//表示抬起的函数
+			break;
+		default:
+			break;
+		}
+	}
+	
+	void Draw()
+	{
+		switch (status)
+		{
+		case Status::Idle:
+			putimage(region.left, region.top, &img_idle);
+			break;	
+		case Status::Pushed:
+			putimage(region.left, region.top, &img_pushed);
+			break;
+		case Status::Hovered:
+			putimage(region.left, region.top, &img_hovered);
+			break;
+		}
+	}
+protected:
+	virtual void OnClick() = 0;
 
 private:
 	RECT region;
@@ -63,10 +110,50 @@ private:
 	enum class Status
 	{
 		Idle = 0,
-		Hovered = 0,
+		Hovered = 1,
 		Pushed
 	};
-};*/
+	Status status = Status::Idle;
+
+private:
+	//检测鼠标点击
+	bool CheckCursorHit(int x, int y)
+	{
+		return x >= region.left && x <= region.right && y >= region.top && y <= region.bottom;
+	}
+};
+
+//游戏开始按钮，
+class StartGameButton : public Button
+{
+public:
+	StartGameButton(RECT rect, LPCTSTR path_img_idle, LPCTSTR path_img_hovered, LPCTSTR path_img_pushed)
+		: Button(rect, path_img_idle, path_img_hovered, path_img_pushed){}
+	~StartGameButton() = default;
+protected:
+	void OnClick()
+	{
+		is_game_started = true;
+		mciSendString(_T("play bgm repeat from 0"), NULL, 0, NULL);
+	}
+
+};
+
+//游戏结束按钮，
+class QuitGameButton : public Button
+{
+public:
+	QuitGameButton(RECT rect, LPCTSTR path_img_idle, LPCTSTR path_img_hovered, LPCTSTR path_img_pushed)
+		: Button(rect, path_img_idle, path_img_hovered, path_img_pushed) {}
+	~QuitGameButton() = default;
+
+protected:
+	void OnClick()
+	{
+		running = false;
+	}
+
+};
 
 class Animation
 {
@@ -486,24 +573,52 @@ int main()
 {
 	initgraph(1280, 720);
 
+	//重复
+	IMAGE img_idle;
+	IMAGE img_hovered;
+	IMAGE img_pushed;
+
 	mciSendString(_T("open mus/bgm.mp3 alias bgm"), NULL, 0, NULL);
 	mciSendString(_T("open mus/hit.wav alias hit"), NULL, 0, NULL);
 	//加载音乐
 
-	mciSendString(_T("play bgm repeat from 0"), NULL, 0, NULL);
+	const int WINDOW_WIDTH = 1280;
+	const int WINDOW_HEIGHT = 720;
+	
+	const int BUTTON_WIDTH = 192;
+	const int BUTTON_HEIGHT = 75;
+
 	bool running = true;
 
 	int score = 0;
 	Player player;
 	ExMessage msg;
+	IMAGE img_menu;
 	IMAGE img_background;
 	IMAGE img_shadow; //引入阴影
 	IMAGE img_enemy;
 	std::vector<Enemy*> enemy_list;
 	std::vector<Bullet> bullet_list(1);// 定义了球的数量
 
+	RECT region_btn_start_game, region_btn_quit_game;
+
+	region_btn_start_game.left = (WINDOW_WIDTH - BUTTON_WIDTH) / 2;
+	region_btn_start_game.right = region_btn_start_game.left + BUTTON_WIDTH;
+	region_btn_start_game.top = 430;
+	region_btn_start_game.bottom = region_btn_start_game.top + BUTTON_HEIGHT;
+
+	region_btn_quit_game.left = (WINDOW_WIDTH - BUTTON_WIDTH) / 2;
+	region_btn_quit_game.right = region_btn_quit_game.left + BUTTON_WIDTH;
+	region_btn_quit_game.top = 550;
+	region_btn_quit_game.bottom = region_btn_quit_game.top + BUTTON_HEIGHT;
+
+	StartGameButton btn_start_game = StartGameButton(region_btn_start_game,
+		_T("img/ui_start_idle.png"), _T("img/ui_start_hovered.png"), _T("img/ui_start_pushed.png"));
+	QuitGameButton btn_quit_game = QuitGameButton(region_btn_quit_game,
+		_T("img/ui_quit_idle.png"), _T("img/ui_quit_hovered.png"), _T("img/ui_quit_pushed.png"));
+
 	loadimage(&img_background, _T("img/background.png")); //加载背景
-	
+	loadimage(&img_menu, _T("img/menu.png")); //加载menu
 	bool is_move_up = false;
 	bool is_move_down = false;
 	bool is_move_left = false;
@@ -525,74 +640,95 @@ int main()
 		*/
 		while (peekmessage(&msg))
 		{
-			player.ProcessEvent(msg);
+			//确定接收的msg是用在主菜单还是进入游戏内
+			if (is_game_started)
+				player.ProcessEvent(msg);
+			else
+			{
+				btn_start_game.ProcessEvent(msg);
+				btn_quit_game.ProcessEvent(msg);
+			}
 		}
 
-		player.Move();
-		UpdateBullets(bullet_list, player);
-		TryGenerateEnemy(enemy_list);
-		for (Enemy* enemy : enemy_list)
+		if (is_game_started)
 		{
-			enemy->Move(player);
-		}
-		
-		
-		// (游戏结束判定)遍历敌人vector容器，依次检测野猪是否与玩家相碰
-		for (Enemy* enemy : enemy_list)
-		{
-			if (enemy->CheckPlayerCollision(player))
+			player.Move();
+			UpdateBullets(bullet_list, player);
+			TryGenerateEnemy(enemy_list);
+			for (Enemy* enemy : enemy_list)
 			{
-				static TCHAR text[128];
-				_stprintf_s(text, _T("最终得分：%d !!!"), score);
-				MessageBox(GetHWnd(),text, _T("游戏结束, 已经结束啦"), MB_OK);
-				running = false;
-				break;
-			}	
+				enemy->Move(player);
+			}
 
-		}
-		//检测子弹和野猪的碰撞
-		for (Enemy* enemy : enemy_list)
-		{
-			for (const Bullet& bullet : bullet_list)
+
+			// (游戏结束判定)遍历敌人vector容器，依次检测野猪是否与玩家相碰
+			for (Enemy* enemy : enemy_list)
 			{
-				if (enemy->CheckBulletCollision(bullet))
+				if (enemy->CheckPlayerCollision(player))
 				{
-					enemy->Hurt();
-					mciSendString(_T("setaudio hit volume to 10000"), NULL, 0, NULL);
-					mciSendString(_T("play hit repeat from 0"), NULL, 0, NULL);
-					score++;
+					static TCHAR text[128];
+					_stprintf_s(text, _T("最终得分：%d !!!"), score);
+					MessageBox(GetHWnd(), text, _T("游戏结束, 已经结束啦"), MB_OK);
+					running = false;
+					break;
+				}
+
+			}
+			//检测子弹和野猪的碰撞
+			for (Enemy* enemy : enemy_list)
+			{
+				for (const Bullet& bullet : bullet_list)
+				{
+					if (enemy->CheckBulletCollision(bullet))
+					{
+						enemy->Hurt();
+						mciSendString(_T("setaudio hit volume to 10000"), NULL, 0, NULL);
+						mciSendString(_T("play hit repeat from 0"), NULL, 0, NULL);
+						score++;
+					}
+				}
+			}
+
+			//移除生命值归零的敌人
+			for (size_t i = 0; i < enemy_list.size(); i++)
+			{
+				Enemy* enemy = enemy_list[i];
+				if (!enemy->CheckAlive())
+				{
+					std::swap(enemy_list[i], enemy_list.back());
+					enemy_list.pop_back();
+					//这里删除敌人元素运用了组合技， 先swap将欲删除元素和顶部元素交换位置，再删顶部元素
+					delete enemy;
 				}
 			}
 		}
-
-		//移除生命值归零的敌人
-		for (size_t i = 0; i < enemy_list.size(); i++)
-		{
-			Enemy* enemy = enemy_list[i];
-			if (!enemy->CheckAlive())
-			{
-				std::swap(enemy_list[i], enemy_list.back());
-				enemy_list.pop_back();
-				//这里删除敌人元素运用了组合技， 先swap将欲删除元素和顶部元素交换位置，再删顶部元素
-				delete enemy;
-			}
-		}
+		
 		
 		cleardevice();
 		
-		putimage(0, 0, &img_background);
-		player.Draw(1000 / 144);
-		for (Enemy* enemy : enemy_list)
+		if (is_game_started)
 		{
-			//循环调用Draw函数
-			enemy->Draw(1000 / 144);
-		}
-		for (const Bullet& bullet : bullet_list)
-		{
-			bullet.Draw();
-		}
+			putimage(0, 0, &img_background);
+			player.Draw(1000 / 144);
+			for (Enemy* enemy : enemy_list)
+			{
+				//循环调用Draw函数
+				enemy->Draw(1000 / 144);
+			}
+			for (const Bullet& bullet : bullet_list)
+			{
+				bullet.Draw();
+			}
 
-		DrawPlayerScore(score);
+			DrawPlayerScore(score);
+		}
+		else
+		{
+			putimage(0, 0, &img_menu);
+			btn_start_game.Draw();
+			btn_quit_game.Draw();
+		}
+		
 
 		FlushBatchDraw();
 
