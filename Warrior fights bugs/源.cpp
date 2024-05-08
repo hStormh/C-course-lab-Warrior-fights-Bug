@@ -71,14 +71,17 @@ public:
 			break;
 
 		case WM_LBUTTONDOWN:
-			if (!CheckCursorHit(msg.x, msg.y))
+			if (CheckCursorHit(msg.x, msg.y))
 				status = Status::Pushed;
+			else
+				status = Status::Idle;
 			break;
 		case WM_LBUTTONUP:
 			if (status == Status::Pushed)
 				OnClick();//表示抬起的函数
 			break;
 		default:
+			status = Status::Idle;
 			break;
 		}
 	}
@@ -150,6 +153,7 @@ public:
 protected:
 	void OnClick()
 	{
+		is_game_started = false;
 		running = false;
 	}
 
@@ -382,7 +386,8 @@ public:
 		loadimage(&img_shadow, _T("img/shadow_enemy.png"));
 		anim_left = new Animation(_T("img/enemy_left_%d.png"), 6, 45);
 		anim_right = new Animation(_T("img/enemy_right_%d.png"), 6, 45);
-
+		// 将猪的朝左和朝右进行了实例化
+		
 		//敌人生成边界, 利用枚举
 		enum class SpawnEdge
 		{
@@ -461,11 +466,16 @@ public:
 			position.x += (int)(SPEED * normalized_x);
 			position.y += (int)(SPEED * normalized_y);
 		}
+		if (player_position.x - position.x > 0)
+		{
+			facing_left = false;
+		}
+		else
+			facing_left = true;
 	}
 
 	void Draw(int delta)
 	{
-		const Player player;
 		
 		int pos_shadow_x = position.x + (FRAME_WIDTH / 2 - SHADOW_WIDTH / 2);
 		// 计算阴影应该绘制的水平位置
